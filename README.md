@@ -52,6 +52,7 @@ npm install
 ```bash
 cp .env.example .env
 # Edit .env with your database and Shopify credentials
+# Make sure to set JWT_SECRET for authentication security
 ```
 
 4. Setup database
