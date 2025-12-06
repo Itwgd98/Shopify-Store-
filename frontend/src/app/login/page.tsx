@@ -23,6 +23,8 @@ export default function LoginPage() {
       toast({ title: "Welcome back!", type: "success" });
       router.push("/dashboard");
     } catch (error: any) {
+      // Debug: log full error for troubleshooting
+      console.error("Login error details:", error);
       const errorMessage = error.response?.data?.error?.message || error.response?.data?.error || error.message || "Login failed";
       toast({
         title: "Login failed",
