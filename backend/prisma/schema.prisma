@@ -1,0 +1,284 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MULTI-TENANT ARCHITECTURE ====================
+
+// Tenant represents a Shopify store connected to our platform
+model Tenant {
+  id              String    @id @default(uuid())
+  shopDomain      String    @unique // e.g., "my-store.myshopify.com"
+  shopName        String?
+  accessToken     String    // Encrypted Shopify access token
+  scopes          String?   // Granted scopes
+  isActive        Boolean   @default(true)
+  syncEnabled     Boolean   @default(true) // Enable/disable automatic sync
+  installedAt     DateTime  @default(now())
+  uninstalledAt   DateTime?
+  lastSyncAt      DateTime?
+  webhookSecret   String?   // For webhook verification
+  
+  // Relations
+  users           User[]
+  customers       Customer[]
+  orders          Order[]
+  products        Product[]
+  syncLogs        SyncLog[]
+  abandonedCarts  AbandonedCart[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shopDomain])
+  @@index([isActive])
+}
+
+// User represents dashboard users (can belong to multiple tenants)
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  role          UserRole @default(MEMBER)
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  
+  // Multi-tenant: User belongs to a tenant
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([email])
+  @@index([tenantId])
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// ==================== SHOPIFY DATA MODELS ====================
+
+model Customer {
+  id                    String    @id @default(uuid())
+  shopifyCustomerId     String    // Shopify's customer ID
+  email                 String?
+  firstName             String?
+  lastName              String?
+  phone                 String?
+  ordersCount           Int       @default(0)
+  totalSpent            Decimal   @default(0) @db.Decimal(12, 2)
+  currency              String    @default("USD")
+  tags                  String[]
+  acceptsMarketing      Boolean   @default(false)
+  shopifyCreatedAt      DateTime?
+  shopifyUpdatedAt      DateTime?
+  
+  // Multi-tenant isolation
+  tenantId              String
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  orders                Order[]
+  abandonedCarts        AbandonedCart[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([tenantId, shopifyCustomerId])
+  @@index([tenantId])
+  @@index([email])
+  @@index([totalSpent])
+}
+
+model Product {
+  id                String    @id @default(uuid())
+  shopifyProductId  String    // Shopify's product ID
+  title             String
+  description       String?
+  vendor            String?
+  productType       String?
+  handle            String?
+  status            String    @default("active") // active, draft, archived
+  tags              String[]
+  imageUrl          String?
+  
+  // Pricing (from first variant or product-level)
+  price             Decimal?  @db.Decimal(12, 2)
+  compareAtPrice    Decimal?  @db.Decimal(12, 2)
+  
+  // Inventory
+  totalInventory    Int       @default(0)
+  
+  shopifyCreatedAt  DateTime?
+  shopifyUpdatedAt  DateTime?
+  
+  // Multi-tenant isolation
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  orderItems        OrderItem[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([tenantId, shopifyProductId])
+  @@index([tenantId])
+  @@index([title])
+  @@index([status])
+}
+
+model Order {
+  id                  String      @id @default(uuid())
+  shopifyOrderId      String      // Shopify's order ID
+  orderNumber         String?     // Human-readable order number
+  email               String?
+  financialStatus     String?     // pending, paid, refunded, etc.
+  fulfillmentStatus   String?     // fulfilled, unfulfilled, partial
+  
+  // Amounts
+  totalPrice          Decimal     @db.Decimal(12, 2)
+  subtotalPrice       Decimal?    @db.Decimal(12, 2)
+  totalTax            Decimal?    @db.Decimal(12, 2)
+  totalDiscounts      Decimal?    @db.Decimal(12, 2)
+  totalShipping       Decimal?    @db.Decimal(12, 2)
+  currency            String      @default("USD")
+  
+  // Additional info
+  note                String?
+  tags                String[]
+  cancelledAt         DateTime?
+  cancelReason        String?
+  
+  shopifyCreatedAt    DateTime?
+  shopifyUpdatedAt    DateTime?
+  processedAt         DateTime?
+  
+  // Multi-tenant isolation
+  tenantId            String
+  tenant              Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Customer relation
+  customerId          String?
+  customer            Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  // Relations
+  orderItems          OrderItem[]
+  
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@unique([tenantId, shopifyOrderId])
+  @@index([tenantId])
+  @@index([shopifyCreatedAt])
+  @@index([financialStatus])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id                  String    @id @default(uuid())
+  shopifyLineItemId   String    // Shopify's line item ID
+  title               String
+  quantity            Int
+  price               Decimal   @db.Decimal(12, 2)
+  totalDiscount       Decimal   @default(0) @db.Decimal(12, 2)
+  sku                 String?
+  variantTitle        String?
+  
+  // Relations
+  orderId             String
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId           String?
+  product             Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// ==================== ABANDONED CART TRACKING ====================
+
+model AbandonedCart {
+  id                  String    @id @default(uuid())
+  shopifyCheckoutId   String    // Shopify's checkout ID
+  shopifyCartToken    String?   // Cart token
+  email               String?
+  totalPrice          Decimal?  @db.Decimal(12, 2)
+  currency            String    @default("USD")
+  itemCount           Int       @default(0)
+  cartItems           Json?     // Store cart items as JSON
+  
+  // Tracking
+  checkoutStartedAt   DateTime?
+  abandonedAt         DateTime?
+  recoveredAt         DateTime? // If customer completed purchase
+  isRecovered         Boolean   @default(false)
+  
+  // Multi-tenant isolation
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Customer relation (optional - might be guest)
+  customerId          String?
+  customer            Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([tenantId, shopifyCheckoutId])
+  @@index([tenantId])
+  @@index([abandonedAt])
+  @@index([isRecovered])
+}
+
+// ==================== SYNC LOGGING ====================
+
+model SyncLog {
+  id            String      @id @default(uuid())
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  syncType      SyncType
+  status        SyncStatus
+  recordsCount  Int         @default(0)
+  errorMessage  String?
+  startedAt     DateTime    @default(now())
+  completedAt   DateTime?
+  
+  createdAt     DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([syncType])
+  @@index([startedAt])
+}
+
+enum SyncType {
+  CUSTOMERS
+  ORDERS
+  PRODUCTS
+  FULL
+  INCREMENTAL
+  WEBHOOK
+}
+
+enum SyncStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
