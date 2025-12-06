@@ -51,10 +51,15 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const memUsage = process.memoryUsage();
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    memory: {
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB'
+    },
     version: '2.0.0'
   });
 });
