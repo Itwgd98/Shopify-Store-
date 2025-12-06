@@ -49,12 +49,13 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'));
 }
 
-// Health check
+// Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    uptime: process.uptime(),
+    version: '2.0.0'
   });
 });
 
@@ -80,7 +81,7 @@ app.use((req, res) => {
 const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  
+
   // Initialize the data sync scheduler
   if (process.env.NODE_ENV !== 'test') {
     initializeScheduler();
