@@ -28,14 +28,22 @@ export const authenticate = async (
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'No token provided' 
+      return res.status(401).json({
+        success: false,
+        error: 'No token provided'
       });
     }
 
     const token = authHeader.split(' ')[1];
     const secret = process.env.JWT_SECRET || 'default-secret';
+
+    // Validate token format before verification
+    if (!token || token.split('.').length !== 3) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token format'
+      });
+    }
 
     const decoded = jwt.verify(token, secret) as JwtPayload;
 
@@ -46,16 +54,16 @@ export const authenticate = async (
     });
 
     if (!user || !user.isActive) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'User not found or inactive' 
+      return res.status(401).json({
+        success: false,
+        error: 'User not found or inactive'
       });
     }
 
     if (!user.tenant.isActive) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Tenant is inactive' 
+      return res.status(401).json({
+        success: false,
+        error: 'Tenant is inactive'
       });
     }
 
@@ -70,15 +78,15 @@ export const authenticate = async (
     next();
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid token' 
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token'
       });
     }
     if (error instanceof jwt.TokenExpiredError) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Token expired' 
+      return res.status(401).json({
+        success: false,
+        error: 'Token expired'
       });
     }
     next(error);
@@ -88,16 +96,16 @@ export const authenticate = async (
 export const requireRole = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Not authenticated' 
+      return res.status(401).json({
+        success: false,
+        error: 'Not authenticated'
       });
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Insufficient permissions' 
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions'
       });
     }
 
@@ -108,9 +116,9 @@ export const requireRole = (...roles: string[]) => {
 // Middleware to ensure tenant isolation
 export const tenantIsolation = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.tenantId) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Tenant context required' 
+    return res.status(400).json({
+      success: false,
+      error: 'Tenant context required'
     });
   }
   next();
